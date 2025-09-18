@@ -1,0 +1,67 @@
+import fitz  # PyMuPDF
+import re
+import pandas as pd
+from pathlib import Path
+
+# Pasta com os PDFs
+pasta_pdfs = r"Z:\DESSS\Apoio Tecnico\MODELOS 2020\APOSENTADORIA\servidores 2020"
+pdf_files = list(Path(pasta_pdfs).glob("*.pdf"))
+
+# Nome do arquivo Excel de saída
+nome_excel_saida = r"C:\Users\diego.lsilva\Documents\ExtrairEmail\2020.xlsx"
+
+# Número máximo de CIDs que queremos colocar em colunas
+MAX_CIDS = 10
+
+# Lista para armazenar registros
+registros = []
+
+for pdf_file in pdf_files:
+    print(f"Lendo arquivo: {pdf_file.name}")
+
+    doc = fitz.open(pdf_file)
+    texto_extraido = ""
+    for page in doc:
+        texto_extraido += page.get_text()
+
+    # Encontrar todos os nomes
+    nomes = re.findall(r"Nome:\s*(.+)", texto_extraido)
+
+    for nome in nomes:
+        pos_nome = texto_extraido.find(f"Nome: {nome}")
+        prox_nome = texto_extraido.find("Nome:", pos_nome + 1)
+        trecho = texto_extraido[pos_nome:prox_nome] if prox_nome != -1 else texto_extraido[pos_nome:]
+
+        # CPF
+        cpf_match = re.search(r"\d{3}\.\d{3}\.\d{3}-\d{2}", trecho)
+        cpf = cpf_match.group() if cpf_match else ""
+
+        # Cargo (captura até o final da linha)
+        cargo_match = re.search(r"Cargo:\s*(.+?)(\n|$)", trecho)
+        cargo = cargo_match.group(1).strip() if cargo_match else ""
+
+        # Órgão (captura até o final da linha e cobre variações de acento)
+        orgao_match = re.search(r"Ór[g|ã]o:\s*(.+?)(\n|$)", trecho)
+        orgao = orgao_match.group(1).strip() if orgao_match else ""
+
+        # CIDs
+        cids = re.findall(r"CID-10:\s*([A-Z0-9\.]+)", trecho)
+
+        # Registro
+        registro = {
+            "Arquivo": pdf_file.name,
+            "Nome": nome,
+            "CPF": cpf,
+            "Cargo": cargo,
+            "Órgão": orgao
+        }
+        for i in range(MAX_CIDS):
+            key = f"CID{i + 1}"
+            registro[key] = cids[i] if i < len(cids) else ""
+        registros.append(registro)
+
+# Criar DataFrame e salvar
+df = pd.DataFrame(registros)
+df.to_excel(nome_excel_saida, index=False)
+
+print(f"Extração concluída! Arquivo Excel salvo em: {nome_excel_saida}")
